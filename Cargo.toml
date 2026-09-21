@@ -1,0 +1,17 @@
+[package]
+name = "marketplace-model-spend-guard"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+
+[[bin]]
+name = "marketplace_handoff_service"
+path = "src/marketplace_handoff_service.rs"
+
+[dependencies]
+axum = "0.7.9"
+reqwest = { version = "0.12.28", default-features = false, features = ["json", "rustls-tls"] }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"
+thiserror = "2.0.20"
+tokio = { version = "1.53.1", features = ["macros", "net", "rt-multi-thread", "time"] }
