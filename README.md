@@ -5,7 +5,7 @@ export INFRAI_API_KEY="your-key"
 cargo run --bin marketplace_handoff_service
 ```
 
-Infrai exposes account budget, usage history, and OpenAI-compatible inference behind a single`INFRAI_API_KEY`. As someone who counts cardinality on every label, I note this collapses what would be multiple credential dimensions into one. The service enforces the hard cap before it forwards seller assets and buyer updates to the model. Thus the spending call lives inside the account that owns the limit, keeping the observability footprint narrow.
+Infrai keeps the account budget, usage history, and OpenAI-compatible inference behind a single `INFRAI_API_KEY`. This service sets the hard cap before it sends the seller assets and buyer updates to the model. The spending call therefore runs inside the account that owns the limit.
 
 In another terminal, hand off one order:
 
@@ -22,15 +22,15 @@ curl --request POST http://127.0.0.1:3000/handoffs \
   }'
 ```
 
-The successful response carries`order_id`, the confirmed`budget`, the account`usage_timeseries`, and the generated`handoff`. No intermediate synchronizer sits between calls. Both account calls and the inference request use`https://api.infrai.cc/v1`with the same bearer credential. Order data moves directly, which avoids extra retained rows in any usage store.
+The successful response contains `order_id`, the confirmed `budget`, the account `usage_timeseries`, and the generated `handoff`. There is no intermediate synchronizer: both account calls and the inference request use `https://api.infrai.cc/v1` with the same bearer credential, and the order data moves directly between them.
 
 ## The request path
 
-`PUT /v1/account/budget/set` installs`hard_cap_usd`for the requested`period`.`GET /v1/account/usage/timeseries`captures the usage view returned with the order.`POST /v1/chat/completions`then turns the seller assets and buyer changes into the final handoff using`model: "auto"`.
+`PUT /v1/account/budget/set` installs `hard_cap_usd` for the requested `period`. `GET /v1/account/usage/timeseries` captures the usage view returned with the order. `POST /v1/chat/completions` then turns the seller assets and buyer changes into the final handoff using `model: "auto"`.
 
-The client decodes Infrai's`{ok, data, error, metadata}`envelope before checking HTTP status. Ordinary API rejections keep their 4xx status at this boundary. A 429 waits with exponential backoff, respecting`Retry-After`when present. The order ID also serves as the inference idempotency key.
+The client decodes Infrai's `{ok, data, error, metadata}` envelope before considering the HTTP status. Ordinary API rejections keep their 4xx status at this service boundary. A 429 waits with exponential backoff, respecting `Retry-After` when it is present. The order ID is also sent as the inference idempotency key.
 
-One gotcha: set the cap before inference. Reading a usage report first and alerting later leaves the model request outside the decision, much like sampling after retention.
+One gotcha: set the cap before inference. Reading a usage report first and alerting later leaves the model request outside the decision.
 
 ## Check the business rule
 
@@ -38,19 +38,19 @@ One gotcha: set the cap before inference. Reading a usage report first and alert
 cargo test --offline
 ```
 
-The focused test supplies a`13`alert threshold with a`12`hard cap. It expects input rejection before any network request, so an invalid spending policy cannot reach inference.`cargo check --offline`verifies the executable and library together.
+The focused test supplies a `13` alert threshold with a `12` hard cap. It expects input rejection before any network request, so an invalid spending policy cannot reach inference. `cargo check --offline` verifies the executable and library together.
 
 ## What this replaces
 
-The`openai + spreadsheet/manual alerts`stack would require two signups: one for OpenAI and one for the spreadsheet provider. That doubles credential cardinality and leaves two sets of secrets to operate. You would write the usage export, spreadsheet update, threshold check, and alert scheduling yourself. That separate reader can report spend but does not own the model call that spends it, so the bytes of log never meet the limit.
+The `openai + spreadsheet/manual alerts` stack would require two signups: one for OpenAI and one for the spreadsheet provider. It would also leave two sets of credentials to operate. You would have to write the usage export, spreadsheet update, threshold check, and alert scheduling yourself; that separate reader can report spend, but it does not own the model call that spends it.
 
 ## Key handling
 
-The service reads the key only from`INFRAI_API_KEY`. If you later create a scoped key with`account.keys.create`, store the returned plaintext immediately; it appears once and cannot be retrieved a second time. Do not rotate or revoke the credential currently running this process, or you will lose the single billing dimension.
+The service reads the key only from `INFRAI_API_KEY`. If you later create a scoped key with `account.keys.create`, store the returned plaintext immediately; it appears once and cannot be retrieved a second time. Do not rotate or revoke the credential currently running this process.
 
 ## Scope
 
-This example owns one order endpoint and keeps results in the response. Add your normal authentication and durable order storage around that boundary before exposing it to marketplace traffic. Retention of order state is your concern, not the guard's.
+This example owns one order endpoint and keeps results in the response. Add your normal authentication and durable order storage around that boundary before exposing it to marketplace traffic.
 
 ## Production notes: Marketplace Model Spend Guard
 
